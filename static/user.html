@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>User</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        .card { max-width: 720px; margin: 28px auto; padding: 20px; }
+    </style>
+</head>
+<body class="matt-bg">
+    <header class="topbar">
+        <div class="brand">MyApp</div>
+        <div class="user-avatar" style="display:flex;align-items:center;gap:10px">
+            <div id="avatar" class="avatar" title=""><span id="avatar-text"></span></div>
+            <span id="username" style="display:none">—</span>
+        </div>
+    </header>
+
+    <main class="card matt-card fade-up">
+        <h2 class="muted-title">User Dashboard</h2>
+        <p class="muted">A minimal, homogenous matt-style interface for users.</p>
+
+        <section>
+            <p>Welcome back, <strong id="username-strong">user</strong>.</p>
+        </section>
+
+        <section class="ad-block" style="margin-top:12px;padding:12px;border-radius:6px;background:linear-gradient(180deg, rgba(138,165,156,0.06), rgba(138,165,156,0.03));">
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+                <div style="flex:0 0 240px">
+                    <img id="productImg" src="/static/product.svg" alt="Back in Black vinyl" style="width:100%;border-radius:6px;">
+                </div>
+                <div style="flex:1;min-width:220px">
+                    <h3>AC/DC — Back in Black (Vinyl)</h3>
+                    <p>After the tragic death of original singer Bon Scott, <em>Back in Black</em> proved that AC/DC relied on one thing above all: their relentless drive to deliver precise, powerful rock. Brian Johnson's arrival — initially met with skepticism — soon showed that the band could survive the catastrophe of Scott's loss. Opening with the solemn bells of "Hells Bells", <em>Back in Black</em> stands as both a tribute to their fallen frontman and a declaration of resilience.</p>
+                    <ul style="margin:8px 0 10px 18px;color:var(--muted)">
+                        <li>Iconic hard rock album featuring "Hells Bells", "Back in Black" and "You Shook Me All Night Long"</li>
+                        <li>12" vinyl LP — classic analogue listening experience</li>
+                        <li>Great for collectors and long-time fans</li>
+                    </ul>
+                    <div style="display:flex;gap:10px;align-items:center">
+                        <a class="btn pulse" href="https://www.fnac.com/a1473837/AC-DC-Back-In-Black-Vinyle-album" target="_blank" rel="noopener">Buy now</a>
+                        <a class="btn ghost" href="https://www.fnac.com/a1473837/AC-DC-Back-In-Black-Vinyle-album" target="_blank" rel="noopener">Details</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <div class="actions" style="margin-top:14px;align-items:center">
+            <form id="changePasswordForm" style="display:flex;gap:8px;align-items:center;">
+                <input type="password" name="old_password" placeholder="Old password" required style="padding:6px;border-radius:6px;border:1px solid rgba(0,0,0,0.06)">
+                <input type="password" name="new_password" placeholder="New password" required style="padding:6px;border-radius:6px;border:1px solid rgba(0,0,0,0.06)">
+                <button type="submit" class="btn">Change</button>
+            </form>
+            <a id="logoutBtn" class="btn ghost" href="#">Logout</a>
+        </div>
+    </main>
+
+    <script>
+    async function ensureUser() {
+        const token = localStorage.getItem('token');
+        if (!token) return window.location.replace('/');
+        const resp = await fetch('/me', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!resp.ok) return window.location.replace('/');
+        const me = await resp.json();
+        if (me.role !== 'user') return window.location.replace('/');
+        // keep hidden username for other scripts
+        document.getElementById('username').textContent = me.username;
+        const s = document.getElementById('username-strong'); if (s) s.textContent = me.username;
+        // build avatar: first letter of full name + first letter of username
+        const full = (me.full_name || '').trim();
+        const uname = (me.username || '').trim();
+        const fInit = full ? full[0].toUpperCase() : '';
+        const uInit = uname ? uname[0].toUpperCase() : '';
+        const avatarText = (fInit || uInit) + (uInit || '');
+        const atEl = document.getElementById('avatar-text'); if (atEl) atEl.textContent = avatarText;
+        const avatarEl = document.getElementById('avatar'); if (avatarEl) {
+            avatarEl.title = `${me.full_name || me.username} (${me.username})`;
+            // deterministic color based on username
+                const palette = ['#7a9a8f','#8fa3ad','#4b6b78','#c67b7b','#9a7ab2','#7ab29a'];
+                let sum = 0; for (let i=0;i<uname.length;i++) sum += uname.charCodeAt(i);
+                const color = palette[sum % palette.length];
+                avatarEl.style.borderColor = color;
+                avatarEl.style.color = color;
+                avatarEl.style.background = 'transparent';
+        }
+    }
+    ensureUser();
+    document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const token = localStorage.getItem('token');
+        if (!token) return window.location.replace('/');
+        const fd = new FormData(e.target);
+        const resp = await fetch('/change_password', { method: 'POST', body: fd, headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await resp.json();
+        if (resp.ok) {
+            alert(data.message || 'Password changed');
+        } else {
+            alert(data.detail || 'Failed to change password');
+        }
+        e.target.reset();
+    });
+    document.getElementById('logoutBtn').addEventListener('click', async (e) => {
+        e.preventDefault();
+        const token = localStorage.getItem('token');
+        if (!token) return window.location.replace('/');
+        await fetch('/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
+        localStorage.removeItem('token');
+        window.location.replace('/');
+    });
+    // try to use a packaged static image if available
+    (async function pickProductImage(){
+        const img = document.getElementById('productImg');
+        if (!img) return;
+        try{
+            const r = await fetch('/static/back_in_black.jpg', { method: 'HEAD' });
+            if (r.ok) { img.src = '/static/back_in_black.jpg'; }
+        }catch(e){}
+    })();
+    </script>
+</body>
+</html>
