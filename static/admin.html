@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Admin</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="matt-bg">
+    <header class="topbar">
+        <div class="brand">MyApp</div>
+        <div class="user-avatar" style="display:flex;align-items:center;gap:10px">
+            <div id="avatar" class="avatar" title=""><span id="avatar-text"></span></div>
+            <span id="username" style="display:none">—</span>
+        </div>
+    </header>
+
+    <main class="card matt-card fade-up">
+        <h2 class="muted-title">Admin Dashboard</h2>
+        <p class="muted">Minimal admin UI with a homogenous matt color palette.</p>
+
+        <section>
+            <h3>Users</h3>
+            <div id="usersList">Loading...</div>
+        </section>
+
+        <div style="margin-top:12px;">
+            <h3>Change your password</h3>
+            <form id="changePasswordFormAdmin" style="display:flex;gap:8px;align-items:center;">
+                <input type="password" name="old_password" placeholder="Old password" required style="padding:6px;border-radius:6px;border:1px solid rgba(0,0,0,0.06)">
+                <input type="password" name="new_password" placeholder="New password" required style="padding:6px;border-radius:6px;border:1px solid rgba(0,0,0,0.06)">
+                <button type="submit" class="btn">Change</button>
+            </form>
+        </div>
+
+        <div class="actions">
+            <a id="logoutBtn" class="btn ghost" href="#">Logout</a>
+        </div>
+    </main>
+
+    <script>
+    async function ensureAdmin() {
+        const token = localStorage.getItem('token');
+        if (!token) return window.location.replace('/');
+        const resp = await fetch('/me', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!resp.ok) return window.location.replace('/');
+        const me = await resp.json();
+        if (me.role !== 'admin') return window.location.replace('/');
+    document.getElementById('username').textContent = me.username;
+    const usersResp = await fetch('/admin/users', { headers: { 'Authorization': 'Bearer ' + token } });
+            if (usersResp.ok) {
+            const users = await usersResp.json();
+        // build avatar for admin
+        const full = (me.full_name || '').trim();
+        const uname = (me.username || '').trim();
+        const fInit = full ? full[0].toUpperCase() : '';
+        const uInit = uname ? uname[0].toUpperCase() : '';
+        const avatarText = (fInit || uInit) + (uInit || '');
+        const atEl = document.getElementById('avatar-text'); if (atEl) atEl.textContent = avatarText;
+        const avatarEl = document.getElementById('avatar'); if (avatarEl) {
+            avatarEl.title = `${me.full_name || me.username} (${me.username})`;
+            const palette = ['#7a9a8f','#8fa3ad','#4b6b78','#c67b7b','#9a7ab2','#7ab29a'];
+            let sum = 0; for (let i=0;i<uname.length;i++) sum += uname.charCodeAt(i);
+            const color = palette[sum % palette.length];
+            avatarEl.style.borderColor = color;
+            avatarEl.style.color = color;
+            avatarEl.style.background = 'transparent';
+        }
+            const admins = users.filter(u => u.role === 'admin');
+            const normal = users.filter(u => u.role === 'user');
+            const renderList = (list) => list.map(u => {
+                const html = `
+                    <div class="user-row">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <div><strong>${u.username}</strong><div style="font-size:0.9rem;color:var(--muted)">${u.full_name} — ${u.email}</div></div>
+                            <div style="display:flex;gap:8px;align-items:center">
+                                <input placeholder="new password" data-user="${u.username}" class="inp-pass" style="padding:6px;border-radius:6px;border:1px solid rgba(0,0,0,0.06)">
+                                <select data-user-role="${u.username}" class="sel-role" style="padding:6px;border-radius:6px;border:1px solid rgba(0,0,0,0.06)"><option value="user">user</option><option value="admin">admin</option></select>
+                                <button class="btn btn-set" data-user="${u.username}" disabled>Set</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                return html;
+            }).join('');
+            let html = '<div style="margin-bottom:8px"><strong>Admins</strong></div>' + renderList(admins) + '<div style="margin-top:12px;margin-bottom:8px"><strong>Users</strong></div>' + renderList(normal);
+            document.getElementById('usersList').innerHTML = html;
+            // wire controls
+            document.querySelectorAll('.user-row').forEach(row => {
+                const username = row.querySelector('.inp-pass')?.dataset.user;
+                const passInput = row.querySelector('.inp-pass');
+                const roleSelect = row.querySelector('.sel-role');
+                const setBtn = row.querySelector('.btn-set');
+                if (!username || !setBtn) return;
+                // set select to current role
+                const userObj = users.find(u => u.username === username);
+                if (userObj && roleSelect) roleSelect.value = userObj.role;
+                // enable button only when a change will occur
+                const checkEnable = () => {
+                    const passVal = passInput?.value?.trim();
+                    const roleVal = roleSelect?.value;
+                    // disable if no changes or trying to change own role
+                    if (!passVal && roleVal === userObj.role) {
+                        setBtn.disabled = true;
+                    } else if (userObj.username === document.getElementById('username').textContent && roleVal !== userObj.role) {
+                        // prevent admin from removing their own admin role
+                        setBtn.disabled = true;
+                    } else {
+                        setBtn.disabled = false;
+                    }
+                };
+                passInput?.addEventListener('input', checkEnable);
+                roleSelect?.addEventListener('change', checkEnable);
+                checkEnable();
+                setBtn.addEventListener('click', async (ev) => {
+                    const token = localStorage.getItem('token');
+                    if (!token) return window.location.replace('/');
+                    const username = ev.currentTarget.dataset.user;
+                    const passVal = passInput.value.trim();
+                    const roleVal = roleSelect.value;
+                    if (passVal) {
+                        const fd = new FormData(); fd.append('new_password', passVal);
+                        const r1 = await fetch(`/admin/users/${username}/set_password`, { method: 'POST', body: fd, headers: { 'Authorization': 'Bearer ' + token } });
+                        const j1 = await r1.json();
+                        if (!r1.ok) return alert(j1.detail || 'Failed to set password');
+                        alert(j1.message || 'Password set');
+                    }
+                    if (roleVal && roleVal !== userObj.role) {
+                        const fd2 = new FormData(); fd2.append('role', roleVal);
+                        const r2 = await fetch(`/admin/users/${username}/set_role`, { method: 'POST', body: fd2, headers: { 'Authorization': 'Bearer ' + token } });
+                        const j2 = await r2.json();
+                        if (!r2.ok) return alert(j2.detail || 'Failed to set role');
+                        alert(j2.message || 'Role updated');
+                    }
+                    // refresh list after change
+                    await ensureAdmin();
+                });
+            });
+        } else {
+            document.getElementById('usersList').textContent = 'Failed to load users.';
+        }
+    }
+    ensureAdmin();
+    document.getElementById('changePasswordFormAdmin').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const token = localStorage.getItem('token');
+        if (!token) return window.location.replace('/');
+        const fd = new FormData(e.target);
+        const resp = await fetch('/change_password', { method: 'POST', body: fd, headers: { 'Authorization': 'Bearer ' + token } });
+        const data = await resp.json();
+        if (resp.ok) {
+            alert(data.message || 'Password changed');
+        } else {
+            alert(data.detail || 'Failed to change password');
+        }
+        e.target.reset();
+    });
+    document.getElementById('logoutBtn').addEventListener('click', async (e) => {
+        e.preventDefault();
+        const token = localStorage.getItem('token');
+        if (!token) return window.location.replace('/');
+        await fetch('/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
+        localStorage.removeItem('token');
+        window.location.replace('/');
+    });
+    </script>
+</body>
+</html>
