@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Login</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>.auth-card{max-width:420px;margin:48px auto;padding:18px}</style>
+</head>
+<body class="matt-bg">
+    <main class="card auth-card matt-card fade-up">
+        <h2 class="muted-title">Sign in</h2>
+        <p class="muted">Enter your credentials. Fields marked * are required.</p>
+        <form id="loginForm">
+            <label>Username *<br><input type="text" name="username" placeholder="Username" required></label>
+            <label style="display:block;margin-top:8px;">Password *<br><input type="password" name="password" placeholder="Password" required></label>
+            <div class="actions" style="margin-top:12px;">
+                <button type="submit" class="btn">Login</button>
+                <a href="/register" class="btn ghost">Register</a>
+            </div>
+        </form>
+    </main>
+
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const response = await fetch('/login', { method: 'POST', body: formData });
+            const data = await response.json();
+            if (response.ok) {
+                localStorage.setItem('token', data.access_token);
+                const token = data.access_token;
+                const meResp = await fetch('/me', { headers: { 'Authorization': 'Bearer ' + token } });
+                if (meResp.ok) {
+                    const me = await meResp.json();
+                    if (me.role === 'admin') {
+                        window.location.href = '/admin';
+                    } else {
+                        window.location.href = '/user';
+                    }
+                } else {
+                    alert('Login succeeded but failed to verify user role');
+                }
+            } else {
+                alert(data.detail || 'Login failed');
+            }
+        });
+    </script>
+</body>
+</html>
