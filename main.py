@@ -17,7 +17,8 @@ security = HTTPBearer()
 load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY") or os.environ.get("SECRET_KEY") or secrets.token_urlsafe(32)
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 40
+REFRESH_TOKEN_EXPIRE_DAYS = 14
 
 Base.metadata.create_all(bind=engine)
 
@@ -32,11 +33,20 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
+
 def create_access_token(data: dict):
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     jti = secrets.token_urlsafe(16)
-    to_encode.update({"exp": expire, "jti": jti})
+    to_encode.update({"exp": expire, "jti": jti, "type": "access"})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def create_refresh_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    jti = secrets.token_urlsafe(16)
+    to_encode.update({"exp": expire, "jti": jti, "type": "refresh"})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -100,11 +110,39 @@ def read_root():
         return "<h1>Login page not found</h1>"
 
 
+
 @app.post("/login")
 def login(username: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == username).first()
     if not user or not verify_password(password, user.password):
         raise HTTPException(status_code=400, detail="Invalid credentials")
+    access_token = create_access_token(data={"sub": username, "role": user.role})
+    refresh_token = create_refresh_token(data={"sub": username, "role": user.role})
+    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+
+
+# Endpoint to refresh access token using refresh token
+@app.post("/refresh")
+def refresh_token(refresh_token: str = Form(...), db: Session = Depends(get_db)):
+    try:
+        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        username: str = payload.get("sub")
+        jti: str = payload.get("jti")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    # check for revoked token
+    if jti:
+        revoked = db.query(RevokedToken).filter(RevokedToken.jti == jti).first()
+        if revoked:
+            raise HTTPException(status_code=401, detail="Token has been revoked")
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    # Issue new access token
     access_token = create_access_token(data={"sub": username, "role": user.role})
     return {"access_token": access_token, "token_type": "bearer"}
 
