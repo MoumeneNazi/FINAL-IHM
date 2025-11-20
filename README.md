@@ -1,3 +1,5 @@
+> **Note for Vercel/Magnum:**
+> On Vercel, the app uses `/tmp/users.db` for SQLite. This file is temporary and will be lost on redeploy or scale events. For persistent data, use a cloud database and set `DATABASE_URL` in your Vercel project settings.
 # FINAL-IHM
 
 A FastAPI web app with user registration, login, admin dashboard, and product showcase (AC/DC Back in Black vinyl).

@@ -4,8 +4,12 @@ from sqlalchemy.orm import sessionmaker
 import os
 from dotenv import load_dotenv
 
+
 load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./users.db")
+if os.environ.get("VERCEL"):
+	DATABASE_URL = "sqlite:////tmp/users.db"
+else:
+	DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./users.db")
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
 	connect_args = {"check_same_thread": False}
